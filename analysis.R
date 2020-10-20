@@ -36,4 +36,8 @@ dta <-
 dta <- dta[!dta$month %in% c("2020-01", "2020-10"),]
 
 
-summary(lm(clinton_trump ~ cases, data = dta))
+init <- lm(clinton_trump ~ cases, data = dta)
+
+sink("initial_model.txt")
+summary(init)
+sink()

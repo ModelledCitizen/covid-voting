@@ -1,0 +1,103 @@
+---
+title: "Does COVID affect vote preferences?"
+author: "David Azizi & Judah Newman"
+date: "10/20/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyr)
+library(dplyr)
+```
+
+## Import Survey Data
+
+```{}
+select
+    FROM_UNIXTIME(sr.date_created,'%Y-%m') as month,
+    z.state_abbrev,
+    cn.county_descr,
+    cn.fips_code,
+    sum(president_vote_2016 like '%Clinton%' and c.text like '%Biden%') as clinton_biden,
+    sum(president_vote_2016 like '%Trump%' and c.text like '%Trump%') as trump_trump,
+    sum(president_vote_2016 like '%Clinton%' and c.text like '%Trump%') as clinton_trump,
+    sum(president_vote_2016 like '%Trump%' and c.text like '%Biden%') as trump_biden
+from survey_data.survey_responders sr
+    join survey_data.surveys s
+        on sr.survey_id = s.id
+    join survey_data.survey_responses r
+        on sr.id = r.survey_responder_id
+    join survey_data.survey_questions q
+        on q.id = r.survey_question_id
+        and q.heading in (
+        'If the election for President were held today, who would you vote for?',
+        'If the 2020 generalt election for President were held today and the candidates were the following, who would you vote for?',
+        'If the election for President were held today and the candidates were the following, who would you vote for?',
+        'If the November election for President were held today, who would you vote for?'
+        )
+    join survey_data.survey_choices c
+        on c.id = r.survey_choice_id
+        and c.survey_question_id = q.id
+    join (select ZCTA, state_abbrev, association_id from zip_map where association_type = 'county' group by ZCTA) z
+        on z.ZCTA = sr.zip_code
+    join counties cn
+        on z.state_abbrev = cn.state_abbrev
+        and z.association_id = cn.county_code
+where sr.date_created > UNIX_TIMESTAMP(20191231)
+group by 1, cn.fips_code
+
+```
+
+
+```{r survey_data}
+survey <- read.csv("county_counts.csv", header = F)
+names(survey) <-
+  c(
+    "month",
+    "state",
+    "county",
+    "fips",
+    "clinton_biden",
+    "trump_trump",
+    "clinton_trump",
+    "trump_biden"
+  )
+```
+
+## Importing and Manipulating COVID Data
+
+From the JHU CSSE.
+
+```{r covid_data}
+covid_wide <- read.csv("time_series_covid19_confirmed_US.csv")
+covid_long <- pivot_longer(covid_wide, starts_with("X"), names_to = "date")
+covid_long$date <- as.Date(covid_long$date, format = "X%m.%d.%y")
+covid_long <- covid_long[!is.na(covid_long$FIPS),]
+covid_long <- covid_long[order(covid_long$FIPS, covid_long$date),]
+covid_long[["new_cases"]] <-
+  c(0, covid_long$value[-1] - covid_long$value[1:length(covid_long$value) - 1])
+covid_long[covid_long$date == "2020-01-22", "new_cases"] <- 0
+covid_long[["month"]] <- format(covid_long$date, "%Y-%m")
+covid <-
+  covid_long %>% 
+  group_by(FIPS, month) %>% 
+  summarize(cases = sum(new_cases), .groups = "keep")
+```
+
+## Join Survey and COVID Data
+```{r join}
+dta <-
+  merge(survey,
+        covid,
+        by.x = c("fips", "month"),
+        by.y = c("FIPS", "month"))
+dta <- dta[!dta$month %in% c("2020-01", "2020-10"),]
+```
+
+## Initial Model
+```{r initial_analysis}
+init <- lm(clinton_trump ~ cases, data = dta)
+summary(init)
+```
+
