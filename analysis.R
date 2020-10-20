@@ -34,3 +34,8 @@ dta <-
         by.x = c("fips", "month"),
         by.y = c("FIPS", "month"))
 dta <- dta[!dta$month %in% c("2020-01", "2020-10"),]
+
+
+summary(lm(clinton_trump ~ cases, data = dta))
+
+corr(dta$clinton_trump, dta$cases)
