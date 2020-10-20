@@ -1,4 +1,3 @@
-setwd("~/Desktop/covid project")
 library(tidyr)
 library(dplyr)
 
@@ -25,8 +24,9 @@ covid_long[["new_cases"]] <-
 covid_long[covid_long$date == "2020-01-22", "new_cases"] <- 0
 covid_long[["month"]] <- format(covid_long$date, "%Y-%m")
 covid <-
-  covid_long %>% group_by(FIPS, month) %>% summarize(cases = sum(new_cases))
-
+  covid_long %>% 
+  group_by(FIPS, month) %>% 
+  summarize(cases = sum(new_cases), .groups = "keep")
 
 dta <-
   merge(survey,
@@ -37,5 +37,3 @@ dta <- dta[!dta$month %in% c("2020-01", "2020-10"),]
 
 
 summary(lm(clinton_trump ~ cases, data = dta))
-
-corr(dta$clinton_trump, dta$cases)

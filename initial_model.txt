@@ -1,0 +1,20 @@
+
+Call:
+lm(formula = clinton_trump ~ cases, data = dta)
+
+Residuals:
+    Min      1Q  Median      3Q     Max 
+-14.024  -0.195  -0.157  -0.148  47.511 
+
+Coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+(Intercept) 1.472e-01  1.369e-02   10.75   <2e-16 ***
+cases       1.757e-04  5.229e-06   33.59   <2e-16 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 1.331 on 10001 degrees of freedom
+  (76 observations deleted due to missingness)
+Multiple R-squared:  0.1014,	Adjusted R-squared:  0.1013 
+F-statistic:  1129 on 1 and 10001 DF,  p-value: < 2.2e-16
+
