@@ -1,5 +1,5 @@
 ---
-title: "Does COVID affect vote preferences?"
+title: "Does COVID affect voter preferences?"
 author: "David Azizi & Judah Newman"
 date: "10/20/2020"
 output: html_document
@@ -12,11 +12,43 @@ library(dplyr)
 library(huxtable)
 ```
 
+We are using Change Research's set of survey respondents to explore whether COVID has changed their political alignment or opinions of political figures. 
+
+Our two sources of data:
+- Change Research respondents since the third week of 2020 up to last week.
+- JHU CSSE's timeseries of COVID-19 cases by county for the same time period.
+
+Our potential dependent variables will be explored in more detail later on.
+
 ## Import Survey Data
 
-This query is not run when the document is rendered because I didn't want to muck around with ODBC in RStudio.
+We must first extract the survey respondent data. We select some political preferences and demographics per respondent, as well as the population and vote history of the respondent's county.
+
+*This query is not run when the document is rendered because I didn't want to muck around with ODBC in RStudio.*
 ```{}
 select
+    pd.week,
+    pd.state_abbrev,
+    pd.county_descr,
+    pd.fips_code,
+    pd.biden,
+    pd.trump,
+    pd.clinton_biden,
+    pd.trump_trump,
+    pd.clinton_trump,
+    pd.trump_biden,
+    ftb.biden_ft,
+    ftt.trump_ft,
+    pd.ethnicity,
+    pd.age,
+    pd.male,
+    pd.county_clinton,
+    pd.county_trump,
+    pd.county_trump_margin,
+    pd.county_pop
+from
+(select
+    sr.id,
     FROM_UNIXTIME(sr.date_created,'%Y-%U') as week,
     z.state_abbrev,
     cn.county_descr,
@@ -29,10 +61,11 @@ select
     if(sr.president_vote_2016 like '%Trump%' and c.text like '%Biden%', 1, 0) as trump_biden,
     sr.ethnicity,
     2020 - sr.year_born as age,
-    sr.gender,
-    cn.votes_2016_clinton / cn.votes_2016_all as cn_clinton_pct,
-    cn.votes_2016_trump / cn.votes_2016_all as cn_trump_pct,
-    pop_2017_18plus as cn_pop
+    if(sr.gender like 'Male', 1, 0) as male,
+    cn.votes_2016_clinton / cn.votes_2016_all as county_clinton,
+    cn.votes_2016_trump / cn.votes_2016_all as county_trump,
+    (cn.votes_2016_trump - cn.votes_2016_clinton) / cn.votes_2016_all as county_trump_margin,
+    pop_2017_18plus as county_pop
 from survey_data.survey_responders sr
     join survey_data.surveys s
         on sr.survey_id = s.id
@@ -54,36 +87,53 @@ from survey_data.survey_responders sr
     join counties cn
         on z.state_abbrev = cn.state_abbrev
         and z.association_id = cn.county_code
+where sr.date_created > UNIX_TIMESTAMP(20191231)) as pd
+join (select
+                  sr.id,
+                  c.text as biden_ft
+from survey_data.survey_responders sr
+    join survey_data.surveys s
+        on sr.survey_id = s.id
+    join survey_data.survey_responses r
+        on sr.id = r.survey_responder_id
+    join survey_data.survey_questions q
+        on q.id = r.survey_question_id
+        and q.heading in (
+        'On a scale of 1-10, how do you feel about Joe Biden? 1 means you strongly oppose him and 10 means you strongly support him.'
+        )
+    join survey_data.survey_choices c
+        on c.id = r.survey_choice_id
+        and c.survey_question_id = q.id
 where sr.date_created > UNIX_TIMESTAMP(20191231)
+) ftb on pd.id = ftb.id
+join (select
+             sr.id,
+             c.text as trump_ft
+from survey_data.survey_responders sr
+    join survey_data.surveys s
+        on sr.survey_id = s.id
+    join survey_data.survey_responses r
+        on sr.id = r.survey_responder_id
+    join survey_data.survey_questions q
+        on q.id = r.survey_question_id
+        and q.heading in (
+        'On a scale of 1-10, how do you feel about President Donald Trump? 1 means you strongly oppose him and 10 means you strongly support him.'
+        )
+    join survey_data.survey_choices c
+        on c.id = r.survey_choice_id
+        and c.survey_question_id = q.id
+where sr.date_created > UNIX_TIMESTAMP(20191231)
+) ftt on pd.id = ftt.id
 ```
-We import the output of DataGrip and reformat it.
+A CSV is saved from DataGrip; we import it here.
 
 ```{r survey_data}
-survey <- read.csv("respondents.csv", header = F)
-names(survey) <-
-  c(
-    "week",
-    "state",
-    "county",
-    "fips",
-    "biden",
-    "trump",
-    "clinton_biden",
-    "trump_trump",
-    "clinton_trump",
-    "trump_biden",
-    "ethnicity",
-    "age",
-    "gender",
-    "county_clinton",
-    "county_trump",
-    "county_pop"
-  )
+survey <- read.csv("respondents.csv")
 ```
 
 ## Importing and Manipulating COVID Data
 
-From the JHU CSSE. We make a long dataset, calculate delta, and collapse by week.
+We download the latest data from the JHU CSSE's GitHub. We make a long table, calculate the delta in cases, and summarize by county and week.
 
 ```{r covid_data}
 covid_wide <-
@@ -105,12 +155,12 @@ covid <-
 
 ## Join Survey and COVID Data
 
-We merge on FIPS code (as an integer) and week, giving us one row per respondent with covid data per respondent's county. 
+We merge (by default, a left join) on FIPS code as an integer and week, giving us one row per respondent with weekly COVID-19 case counts for each respondent's county.
 ```{r join}
 dta <-
   merge(survey,
         covid,
-        by.x = c("fips", "week"),
+        by.x = c("fips_code", "week"),
         by.y = c("FIPS", "week"))
 
 dta <- dta[!dta$week %in% c("2020-02", strftime(Sys.Date(), format = "%Y-%U")),]
@@ -119,30 +169,81 @@ dta[["weekn"]] <- as.numeric(substr(dta$week, 6, 7))
 write.csv(dta, file = "respondents_covid.csv")
 ```
 
-## Predicting Trump -> Biden Switchers
-```{r trump_biden}
-tb.m1 <- lm(trump_biden ~ cases, data = dta)
-tb.m2 <- lm(trump_biden ~ cases + weekn, data = dta)
-tb.m3 <-
-  lm(trump_biden ~ cases + weekn + gender + age + ethnicity, data = dta)
-tb.m4 <-
-  lm(trump_biden ~ cases + weekn + gender + age + ethnicity + county_trump,
-     data = dta)
+## Probability of Voting for Each Candidate
+We have a set of binary variables to consider as dependent here:
+- Biden 2020 intended vote
+- Trump 2020 intended vote
+- Clinton to Trump switcher
+- Biden to Trump switcher
 
-huxreg(tb.m1, tb.m2, tb.m3, tb.m4)
+Since they are binary values between 0 and 1, a logistic regression will yield more helpful coefficients. In a logit model, the predicted y is interpreted as the log-odds of the dependent variable taking on a value of 1 (true), i.e. as a probability.
 
+The second two options for dependent variable more clearly get at our original question of "does COVID affect voter preferences?" but unfortunately suffer from case bias. The overwhelming number of our respondents are NOT switchers. Sampling in equal proportion to achieve balance is a future goal of this project. For now, we proceed to analyze the probability of voting for each candidate as a result of COVID case counts in the respondent's county.
+
+### Trump
+```{r trump_prob}
+t.m1 <- glm(
+  trump ~ cases,
+  data = dta,
+  family = binomial(link = "logit")
+)
+t.m2 <- glm(
+  trump ~ cases + weekn,
+  data = dta,
+  family = binomial(link = "logit")
+)
+t.m3 <- glm(
+  trump ~ cases + weekn + male + age + ethnicity,
+  data = dta,
+  family = binomial(link = "logit")
+)
+t.m4 <- glm(
+  trump ~ cases + weekn + male + age + ethnicity + county_trump_margin,
+  data = dta,
+  family = binomial(link = "logit")
+)
+
+huxreg(t.m1, t.m2, t.m3, t.m4)
 ```
 
-## Predicting Clinton -> Trump Switchers
-```{r clinton_trump}
-ct.m1 <- lm(clinton_trump ~ cases, data = dta)
-ct.m2 <- lm(clinton_trump ~ cases + weekn, data = dta)
-ct.m3 <-
-  lm(clinton_trump ~ cases + weekn + gender + age + ethnicity, data = dta)
-ct.m4 <-
-  lm(clinton_trump ~ cases + weekn + gender + age + ethnicity + county_trump,
-     data = dta)
+### Biden
 
-huxreg(ct.m1, ct.m2, ct.m3, ct.m4)
+The balance is a little off for Biden support, as there is a conservative bias in our subject recruitment. It's still much closer than the switchers.
 
+```{r biden_prob}
+b.m1 <- glm(
+  biden ~ cases,
+  data = dta,
+  family = binomial(link = "logit")
+)
+b.m2 <- glm(
+  biden ~ cases + weekn,
+  data = dta,
+  family = binomial(link = "logit")
+)
+b.m3 <- glm(
+  biden ~ cases + weekn + male + age + ethnicity,
+  data = dta,
+  family = binomial(link = "logit")
+)
+b.m4 <- glm(
+  biden ~ cases + weekn + male + age + ethnicity + county_trump_margin,
+  data = dta,
+  family = binomial(link = "logit")
+)
+
+huxreg(b.m1, b.m2, b.m3, b.m4)
 ```
+
+### Interpretation
+
+It's unclear if there's any affect here. The simpler models would suggest a preference for Biden in countues with higher cases, but controlling for the intrinsic political disposition of the county reverses that effect. (Notice how the sign of the coefficient on `cases` flips once we incorporate the county's margin for Trump.)
+
+The effect size is also extremely small to begin with. A false sense of confidence emerges from the sample size, since we have a row per respondent but we only have unique COVID information per county.
+
+## Trump Feeling Thermometer (1-10)
+
+A logistic regression will not work for values between 1 and 10. We will proceed with an OLS model. 
+
+*suspending work here to share results with team*
+

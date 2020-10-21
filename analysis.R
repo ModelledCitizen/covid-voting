@@ -51,9 +51,26 @@ dta[["weekn"]] <- as.numeric(substr(dta$week, 6, 7))
 write.csv(dta, file = "respondents_covid.csv")
 
 
-init <- lm(clinton_trump ~ cases + weekn, data = dta)
-summary(init)
+tb.m1 <- lm(trump_biden ~ cases, data = dta)
+tb.m2 <- lm(trump_biden ~ cases + weekn, data = dta)
+tb.m3 <-
+  lm(trump_biden ~ cases + weekn + gender + age + ethnicity, data = dta)
+tb.m4 <-
+  lm(trump_biden ~ cases + weekn + gender + age + ethnicity + county_trump,
+     data = dta)
+
+huxreg(tb.m1, tb.m2, tb.m3, tb.m4)
 
 
-full <- lm(clinton_trump ~ cases + weekn + gender + age_range + ethnicity, data = dta)
-summary(full)
+ct.m1 <- lm(clinton_trump ~ cases, data = dta)
+ct.m2 <- lm(clinton_trump ~ cases + weekn, data = dta)
+ct.m3 <-
+  lm(clinton_trump ~ cases + weekn + gender + age + ethnicity, data = dta)
+ct.m4 <-
+  lm(clinton_trump ~ cases + weekn + gender + age + ethnicity + county_trump,
+     data = dta)
+
+huxreg(ct.m1, ct.m2, ct.m3, ct.m4)
+
+
+
