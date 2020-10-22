@@ -136,6 +136,8 @@ A CSV is saved from DataGrip; we import it here.
 
 ```{r survey_data}
 survey <- read.csv("respondents.csv")
+
+dim(survey)
 ```
 
 ## Importing and Manipulating COVID Data
@@ -159,11 +161,14 @@ covid <-
   covid_long %>% 
   group_by(FIPS, week) %>% 
   summarize(cases = sum(new_cases), .groups = "keep")
+
+dim(covid)
 ```
 
 ## Join Survey and COVID Data
 
-We merge (by default, a left join) on FIPS code as an integer and week, giving us one row per respondent with weekly COVID-19 case counts for each respondent's county. We then cacluate the proportional case count by population. Note that this value is scaled by 1000 for interpretability, i.e. 1 case per 1000 population.
+We merge (by default, a left join) on FIPS code as an integer and week, giving us one row per respondent with weekly COVID-19 case counts for each respondent's county. We then cacluate the proportional case count by population. Note that this value is scaled by 1000 for interpretability, i.e. to cases per 1000 population.
+
 ```{r join}
 dta <-
   merge(survey,
@@ -178,20 +183,34 @@ dta[["weekn"]] <- as.numeric(substr(dta$week, 6, 7))
 dta[["propcases"]] <- dta$cases / (dta$county_pop / 1000)
 
 write.csv(dta, file = "respondents_covid.csv")
+
+dim(dta)
+summary(dta)
 ```
+Note that our data begins in the 18th week of the year, or about mid-April.
 
 ## Probability of Voting for Each Candidate
 We have a set of binary variables to consider as dependent here:
 1. Biden 2020 intended vote
 2. Trump 2020 intended vote
 3. Clinton to Trump switcher
-4. Biden to Trump switcher
+4. Trump to Biden switcher
 
 Since they are binary values between 0 and 1, a logistic regression will yield more helpful coefficients. In a logit model, the predicted y is interpreted as the log-odds of the dependent variable taking on a value of 1 (true), i.e. as a probability.
 
-The second two options for dependent variable more clearly get at our original question of "does COVID affect voter preferences?" but unfortunately suffer from case bias. The overwhelming number of our respondents are NOT switchers. Sampling in equal proportion to achieve balance or matching pairs is a future goal of this project. For now, we proceed to analyze the probability of voting for each candidate as a result of COVID case counts in the respondent's county.
+The second two options for dependent variable more clearly get at our original question of "does COVID affect voter preferences?" but unfortunately suffer from case bias. The overwhelming number of our respondents are NOT switchers. Sampling in equal proportion to achieve balance or matching pairs is a future goal of this project. For now, we proceed to analyze the probability of voting for each candidate as a result of COVID case counts per 1000 population in the respondent's county.
+
+```{r switcher_balance}
+prop.table(table(dta$clinton_trump))
+prop.table(table(dta$trump_biden))
+```
 
 ### Trump
+
+```{r trump_balance}
+prop.table(table(dta$trump))
+```
+
 ```{r trump_prob}
 t.m1 <- glm(
   trump ~ propcases,
@@ -218,18 +237,27 @@ t.m5 <- glm(
   data = dta,
   family = binomial(link = "logit")
 )
+t.m6 <- glm(
+  trump ~ propcases + weekn + prevtrump + male + age + four_yr_degree + ethnicity,
+  data = dta,
+  family = binomial(link = "logit")
+)
+
 
 huxreg(t.m1,
        t.m2,
        t.m3,
        t.m4,
        t.m5,
+       t.m6,
        statistics = c("nobs", "logLik", "AIC"))
 ```
 
 ### Biden
 
-The balance is a little off for Biden support, as there is a conservative bias in our subject recruitment. It's still much closer than the switchers.
+```{r biden_balance}
+prop.table(table(dta$biden))
+```
 
 ```{r biden_prob}
 b.m1 <- glm(
@@ -257,18 +285,24 @@ b.m5 <- glm(
   data = dta,
   family = binomial(link = "logit")
 )
+b.m6 <- glm(
+  biden ~ propcases + weekn + prevtrump + male + age + four_yr_degree + ethnicity,
+  data = dta,
+  family = binomial(link = "logit")
+)
 
 huxreg(b.m1,
        b.m2,
        b.m3,
        b.m4,
        b.m5,
+       b.m6,
        statistics = c("nobs", "logLik", "AIC"))
 ```
 
 ### Isolating the Effects of COVID on Preference
 
-```{r}
+```{r output}
 nocovid <- b.m5$model
 nocovid$propcases <- 0
 
@@ -353,10 +387,11 @@ kable(out)
 ```
 
 
-
-## Trump Feeling Thermometer (1-10)
+## Feeling Thermometers (1-10)
 
 A logistic regression is not well-suited for values between 1 and 10. We will proceed with an OLS model. 
+
+### Trump
 
 ```{r trump_ft}
 t.ft1 <- lm(trump_ft ~ propcases, data = dta)
@@ -383,4 +418,29 @@ huxreg(t.ft1,
        statistics = c("nobs", "r.squared", "logLik", "AIC"))
 ```
 
+### Biden
 
+```{r biden_ft}
+b.ft1 <- lm(biden_ft ~ propcases, data = dta)
+b.ft2 <- lm(biden_ft ~ propcases + weekn, data = dta)
+b.ft3 <-
+  lm(biden_ft ~ propcases + weekn + male + age + four_yr_degree + ethnicity,
+     data = dta)
+b.ft4 <-
+  lm(
+    biden_ft ~ propcases + weekn + male + age + four_yr_degree + ethnicity + county_trump_margin,
+    data = dta
+  )
+b.ft5 <-
+  lm(
+    biden_ft ~ propcases + weekn + prevtrump + male + age + four_yr_degree + ethnicity + county_trump_margin,
+    data = dta
+  )
+
+huxreg(b.ft1,
+       b.ft2,
+       b.ft3,
+       b.ft4,
+       b.ft5,
+       statistics = c("nobs", "r.squared", "logLik", "AIC"))
+```

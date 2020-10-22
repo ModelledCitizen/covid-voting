@@ -74,3 +74,90 @@ huxreg(ct.m1, ct.m2, ct.m3, ct.m4)
 
 
 
+### Variant Model (Without County Margin for Trump)
+
+```{r variant}
+nocovid <- b.m6$model
+nocovid$propcases <- 0
+
+locovid <- b.m6$model
+locovid$propcases <- summary(dta$propcases)[2] # 25th percentile
+
+hicovid <- b.m6$model
+hicovid$propcases <- summary(dta$propcases)[5] # 75th percentile
+
+maxcovid <- b.m6$model
+maxcovid$propcases <- max(dta$propcases)
+
+mikecovid <- b.m6$model
+mikecovid$propcases <- 3
+
+b.vec <-
+  c(sum(predict(
+    b.m6, newdata = nocovid, type = "response"
+  )),
+  sum(predict(
+    b.m6, newdata = locovid, type = "response"
+  )),
+  sum(predict(b.m6, type = "response")),
+  sum(dta$biden),
+  sum(predict(
+    b.m6, newdata = hicovid, type = "response"
+  )),
+  sum(predict(
+    b.m6, newdata = maxcovid, type = "response"
+  )),
+  sum(predict(
+    b.m6, newdata = mikecovid, type = "response"
+  )))
+
+
+
+# these matrices are idential to above except for the first column
+# and the first column is ignored by predict()
+nocovid <- t.m6$model
+nocovid$propcases <- 0
+
+locovid <- t.m6$model
+locovid$propcases <- summary(dta$propcases)[2] # 25th percentile
+
+hicovid <- t.m6$model
+hicovid$propcases <- summary(dta$propcases)[5] # 75th percentile
+
+maxcovid <- t.m6$model
+maxcovid$propcases <- max(dta$propcases)
+
+mikecovid <- t.m6$model
+mikecovid$propcases <- 3
+
+
+t.vec <-
+  c(sum(predict(
+    t.m6, newdata = nocovid, type = "response"
+  )),
+  sum(predict(
+    t.m6, newdata = locovid, type = "response"
+  )),
+  sum(predict(t.m6, type = "response")),
+  sum(dta$trump),
+  sum(predict(
+    t.m6, newdata = hicovid, type = "response"
+  )),
+  sum(predict(
+    t.m6, newdata = maxcovid, type = "response"
+  )),
+  sum(predict(
+    t.m6, newdata = mikecovid, type = "response"
+  )))
+
+out <- data.frame(
+  scenario = c("Zero", "Low", "As-is","Among Respondents",  "High", "Max", "Arbitrary (3)"),
+  biden = b.vec,
+  trump = t.vec
+)
+out$diff <- out$biden - out$trump
+
+kable(out)
+```
+
+
