@@ -145,20 +145,24 @@ dim(survey)
 We download the latest data from the JHU CSSE's GitHub. We make a long table, calculate the delta in cases, and summarize by county and week.
 
 ```{r covid_data}
-covid_wide <-
+cwo <-
   read.csv(
-    "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv")
-covid_long <- pivot_longer(covid_wide, starts_with("X"), names_to = "date")
-covid_long$date <- as.Date(covid_long$date, format = "X%m.%d.%y")
-covid_long <- covid_long[!is.na(covid_long$FIPS),]
-covid_long <- covid_long[order(covid_long$FIPS, covid_long$date),]
-covid_long[["new_cases"]] <-
-  c(0, covid_long$value[-1] - covid_long$value[1:length(covid_long$value) - 1])
-covid_long$new_cases[covid_long$new_cases < 0] <- 0
-covid_long[covid_long$date == "2020-01-22", "new_cases"] <- 0
-covid_long[["week"]] <- format(covid_long$date, "%Y-%U")
+    "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_US.csv"
+  )
+cwn <- cbind(
+  FIPS = cwo$FIPS, 
+  cwo[, grep("X(0-9)*", names(cwo))[-1]] - cwo[, grep("X(0-9)*", names(cwo))[-1] - 1]
+  )
+clo <- pivot_longer(cwo, starts_with("X"), names_to = "date", values_to = "total_cases")
+cln <- pivot_longer(cwn, starts_with("X"), names_to = "date", values_to = "new_cases")
+cl <- merge(clo, cln)
+cl$date <- as.Date(cl$date, format = "X%m.%d.%y")
+cl <- cl[!is.na(cl$FIPS), ]
+cl$new_cases[cl$new_cases < 0] <- 0
+
+cl[["week"]] <- format(cl$date, "%Y-%U")
 covid <-
-  covid_long %>% 
+  cl %>% 
   group_by(FIPS, week) %>% 
   summarize(cases = sum(new_cases), .groups = "keep")
 
@@ -383,7 +387,22 @@ out <- data.frame(
 )
 out$diff <- out$biden - out$trump
 
+
 kable(out)
+
+out.pct <- round(rbind(
+  "Zero" = prop.table(c(b.vec[1], t.vec[1])),
+  "Low" = prop.table(c(b.vec[2], t.vec[2])),
+  "As-is" = prop.table(c(b.vec[3], t.vec[3])),
+  "Among Respondents" = prop.table(c(b.vec[4], t.vec[4])),
+  "High" = prop.table(c(b.vec[5], t.vec[5])),
+  "Max" = prop.table(c(b.vec[6], t.vec[6])),
+  "Arbitrary (3)" = prop.table(c(b.vec[7], t.vec[7]))
+) * 100, 2)
+
+out.pct <- as.data.frame(out.pct)
+names(out.pct) <- c("Biden", "Trump")
+kable(out.pct)
 ```
 
 
