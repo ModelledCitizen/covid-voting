@@ -99,9 +99,42 @@ getURL(
 
 # COUNTY ------------------------------------------------------------------
 
-cn <- read.csv("counties.csv")
-#cn$fips_code <- str_pad(cn$fips_code, 5, "left", "0")
+cn <- read.csv("data/counties.csv")
 
+read.csv("data/age_range.csv") %>% 
+  pivot_wider(names_from = level, values_from = pct) -> ar
+
+read.csv("data/education.csv") %>% 
+  pivot_wider(names_from = level, values_from = pct) -> ed
+
+read.csv("data/ethnicity.csv") %>% 
+  pivot_wider(names_from = level, values_from = pct) -> et
+
+read.csv("data/gender.csv") %>% 
+  pivot_wider(names_from = level, values_from = pct) -> gd
+
+read.csv("data/income.csv", skip = 4) %>%
+  (function(x) {return(x[!is.na(x$LineCode), -3])}) %>%
+  pivot_wider(names_from = Description, values_from = X2019) %>%
+  (function(x) {
+    names(x) <- c("countyfips", "countyname", "total_income", "pop_2019", "per_capita_income")
+    x$countyfips <- as.numeric(x$countyfips)
+    x$total_income <- as.numeric(x$total_income)
+    x$pop_2019 <- as.numeric(x$pop_2019)
+    x$per_capita_income <- as.numeric(x$per_capita_income)
+    x[["log_pc_income"]] <- log(x$per_capita_income)
+    return(x)
+  }) -> ic
+
+inner_join(ar, ed) %>%
+  inner_join(et) %>%
+  inner_join(gd) %>%
+  inner_join(ic) %>%
+  (function(x) {
+    x[["fips_code"]] <- as.numeric(x$countyfips)
+    return(x)
+  }) %>%
+  inner_join(cn) -> cn
 
 # MERGE -------------------------------------------------------------------
 
@@ -159,13 +192,13 @@ de$margin_categorical[de$dem_margin_20 == de$dem_margin_16] <- "equal"
 # VISUALIZE ---------------------------------------------------------------
 
 
-
 prop.table(table(de$cdc_urbanicity, de$margin_categorical), margin = 1)
 
 plot(de$prop_cases[de$state_code == "55"], de$dem_diff_16_20[de$state_code == "55"])
 
-plot(de$prop_cases[de$state_code == "55"], (de$votes_2016_all[de$state_code == "55"] - de$votes_2020_all[de$state_code == "55"])/de$votes_2016_all[de$state_code == "55"])
-
+plot(de$prop_cases[de$state_code == "55"],
+     (de$votes_2016_all[de$state_code == "55"] - de$votes_2020_all[de$state_code == "55"]) /
+       de$votes_2016_all[de$state_code == "55"])
 
 
 plot(de$prop_cases, (de$votes_2016_all - de$votes_2020_all)/de$votes_2016_all)
@@ -222,7 +255,52 @@ ggplot(aes(x = dem_margin_16,
   ylab("Dem. Margin 2020")
 dev.off()
 
+
+### TEST COVARIATES ###
+
+covariate_plot <-
+  function(covar,
+           dep_var = "dem_margin_diff",
+           indep_var = "prop_cases",
+           dta = de) {
+    plot_reg <- function(var1, var2, dt = dta) {
+      plot(dt[[var1]],
+           dt[[var2]],
+           pch = ".",
+           main = paste(var2, "by", var1),
+           xlab = var1,
+           ylab = var2)
+      abline(lm(as.formula(
+        paste0("`", var2, "`", "~", "`", var1, "`")
+      ), data = dt), col = "red")
+    }
+    par(mfrow = c(2, 1))
+    plot_reg(covar, dep_var)
+    plot_reg(covar, indep_var)
+  }
+
+pdf("covariate_eval.pdf", width = 5, height = 10)
+covariate_plot("black_or_african_american")
+covariate_plot("college_degree")
+covariate_plot("male")
+covariate_plot("18_to_34")
+covariate_plot("65_or_older")
+covariate_plot("per_capita_income")
+covariate_plot("log_pc_income")
+dev.off()
+
+
+
 # MODEL -------------------------------------------------------------------
+
+
+cm1 <- lm(
+  prop_cases ~ dem_margin_diff + dem_share_16 + less_than_high_school_degree + college_degree + black_or_african_american + hispanic + asian_pacific_islander + male + `18_to_34` + `65_or_older` + log_pc_income,
+  data = de
+)
+summary(cm1)
+
+
 
 # Did COVID have a statistically significant effect on support for Biden?
 # H0: COVID cases have no effect on vote share for the Democrat.
@@ -270,8 +348,9 @@ biden[["m5"]] <- lm(
 summary(biden[["m5"]])
 
 
+options(scipen = 99)
 biden[["m6"]] <- lm(
-  dem_margin_diff ~ prop_log_cases + dem_share_16, 
+  dem_margin_diff ~ prop_cases + dem_share_16 + less_than_high_school_degree + college_degree + black_or_african_american + hispanic + asian_pacific_islander + male + `18_to_34` + `65_or_older` + log_pc_income,
   data = de
 )
 summary(biden[["m6"]])
